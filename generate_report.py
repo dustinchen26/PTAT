@@ -45,9 +45,9 @@ def parse_ptat_file(filename):
         except ValueError:
             continue
 
-        # 只跳過 Index 0（校準起始點），保留 Index 1 以後
-        if index == 0:
-            continue
+        # ========== 修改點：不再跳過 Index 0 ==========
+        # 原程式碼：if index == 0: continue
+        # 已移除，讓所有 Index 都被納入
 
         # 提取時間戳（日期 + 時間）
         timestamp = parts[0] + " " + parts[1]
@@ -113,7 +113,7 @@ def get_abnormal_reasons(row):
 
 def generate_html_report(data, filename):
     if not data:
-        return "<h2>沒有找到 CPU0 的有效數據（正式測試階段），請檢查日誌檔案</h2>"
+        return "<h2>沒有找到 CPU0 的有效數據，請檢查日誌檔案</h2>"
 
     cfreqs = [d['cfreq'] for d in data]
     temps = [d['temp'] for d in data]
@@ -209,7 +209,7 @@ h1, h2, h3 {{ color: #333; }}
 <div class="container">
 <h1>📊 TerraEdge Full TDP 測試報告 (含完整數據)</h1>
 <p><strong>測試日誌：</strong> {filename}</p>
-<p><strong>正式測試資料筆數：</strong> {total_pts} 筆 (已排除校準階段 Index 0)</p>
+<p><strong>正式測試資料筆數：</strong> {total_pts} 筆 (包含全部 CPU0 數據，含 Index 0)</p>
 <p><strong>分析時間：</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
 
 <h2>📈 關鍵參數統計摘要</h2>
@@ -280,7 +280,7 @@ def main():
     print(f"自動偵測到日誌檔案：{latest_file}")
     data = parse_ptat_file(latest_file)
     if not data:
-        print("未提取到有效數據（正式測試階段），請檢查檔案格式。")
+        print("未提取到有效數據，請檢查檔案格式。")
         sys.exit(1)
 
     html_content = generate_html_report(data, latest_file)
