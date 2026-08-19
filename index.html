@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PTAT Full TDP 報告產生器</title>
+<style>
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #f0f2f5;
+    margin: 0;
+    padding: 20px;
+}
+.container {
+    max-width: 1400px;
+    margin: auto;
+    background: white;
+    padding: 25px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+.upload-area {
+    border: 2px dashed #4CAF50;
+    border-radius: 8px;
+    padding: 30px;
+    text-align: center;
+    margin-bottom: 20px;
+    background: #f9f9f9;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+.upload-area:hover {
+    background: #f0f8f0;
+}
+.upload-area input {
+    display: none;
+}
+.btn {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    padding: 10px 25px;
+    border-radius: 5px;
+    font-size: 16px;
+    cursor: pointer;
+    margin-top: 10px;
+}
+.btn:hover {
+    background: #45a049;
+}
+.btn-download {
+    background: #2196F3;
+}
+.btn-download:hover {
+    background: #1976D2;
+}
+#report-container {
+    margin-top: 20px;
+}
+.loading {
+    text-align: center;
+    padding: 20px;
+    display: none;
+}
+.error {
+    color: #d32f2f;
+    background: #ffebee;
+    padding: 15px;
+    border-radius: 5px;
+    display: none;
+}
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>📊 PTAT Full TDP 報告產生器</h1>
+    <p>上傳 <strong>*_ptatmon.txt</strong> 日誌檔，立即產生測試報告。</p>
+
+    <div class="upload-area" id="uploadArea">
+        <p>📁 點擊選擇檔案 或 拖曳檔案至此</p>
+        <p style="font-size:0.9em; color:#888;">支援格式：文字檔 (.txt)</p>
+        <input type="file" id="fileInput" accept=".txt">
+    </div>
+
+    <div id="loading" class="loading">⏳ 正在解析檔案，請稍候...</div>
+    <div id="error" class="error"></div>
+
+    <div id="report-container"></div>
+</div>
+
+<script>
+(function() {
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    const loading = document.getElementById('loading');
+    const errorDiv = document.getElementById('error');
+    const reportContainer = document.getElementById('report-container');
+
+    // 點擊上傳區域觸發檔案選擇
+    uploadArea.addEventListener('click', () => fileInput.click());
+    // 拖曳事件
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.style.borderColor = '#2196F3';
+    });
+    uploadArea.addEventListener('dragleave', () => {
+        uploadArea.style.borderColor = '#4CAF50';
+    });
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.style.borderColor = '#4CAF50';
+        if (e.dataTransfer.files.length) {
+            fileInput.files = e.dataTransfer.files;
+            handleFile(e.dataTransfer.files[0]);
+        }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        if (fileInput.files.length) {
+            handleFile(fileInput.files[0]);
+        }
+    });
+
+    function handleFile(file) {
+        // 顯示載入
+        loading.style.display = 'block';
+        errorDiv.style.display = 'none';
+        reportContainer.innerHTML = '';
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const content = e.target.result;
+                const data = parsePtamonFile(content);
+                const html = generateHtmlReport(data, file.name);
+                reportContainer.innerHTML = html;
+                // 新增下載按鈕
+                addDownloadButton(html, file.name);
+            } catch (err) {
+                showError('解析檔案失敗：' + err.message);
+            } finally {
+                loading.style.display = 'none';
+            }
+        };
+        reader.onerror = () => {
+            showError('讀取檔案失敗，請確認檔案是否可讀。');
+            loading.style.display = 'none';
+        };
+        reader.readAsText(file, 'UTF-8');
+    }
+
+    function showError(msg) {
+        errorDiv.textContent = '❌ ' + msg;
+        errorDiv.style.display = 'block';
+    }
+
+    // ---------- 核心解析函數 (移植自 Python) ----------
+    function parsePtamonFile(text) {
+        const lines = text.split(/\r?\n/);
+        const data = [];
+        let start = false;
+        for (let line of lines) {
+            if (!start && line.includes('Index')) {
+                start = true;
+                continue;
+            }
+            if (!start || !line.trim()) continue;
+
+            const parts = line.trim().split(/\s+/);
+            if (parts.length < 29) continue;
+            if (parts[3] !== 'CPU0') continue;
+
+            const index = parseInt(parts[2], 10);
+            if (isNaN(index)) continue;
+            if (index === 0) continue; // 跳過校準 Index 0
+
+            const timestamp = parts[0] + ' ' + parts[1];
+            const cfreqStr = parts[6];
+            const tempStr = parts[19];
+            const dtsStr = parts[20];
+            const powerStr = parts[21];
+            const tstatStr = parts[24];
+            const tmarginStr = parts[27];
+
+            const cfreq = parseFloat(cfreqStr);
+            const temp = parseFloat(tempStr);
+            const dts = parseFloat(dtsStr);
+            const power = parseFloat(powerStr);
+            const tmargin = parseFloat(tmarginStr);
+            if (isNaN(cfreq) || isNaN(temp) || isNaN(dts) || isNaN(power) || isNaN(tmargin)) continue;
+
+            data.push({
+                index: index,
+                timestamp: timestamp,
+                cfreq: cfreq,
+                cfreqStr: cfreqStr,
+                temp: temp,
+                tempStr: tempStr,
+                dts: dts,
+                dtsStr: dtsStr,
+                power: power,
+                powerStr: powerStr,
+                tstat: tstatStr,
+                tmargin: tmargin,
+                tmarginStr: tmarginStr
+            });
+        }
+        if (data.length === 0) throw new Error('未找到任何有效數據，請確認檔案格式正確。');
+        return data;
+    }
+
+    // ---------- 統計計算 ----------
+    function computeStats(values) {
+        const n = values.length;
+        if (n === 0) return { avg: null, max: null, min: null, std: null };
+        const sum = values.reduce((a,b) => a + b, 0);
+        const avg = sum / n;
+        const maxv = Math.max(...values);
+        const minv = Math.min(...values);
+        const variance = values.reduce((s, v) => s + (v - avg) ** 2, 0) / n;
+        const std = Math.sqrt(variance);
+        return { avg, max: maxv, min: minv, std };
+    }
+
+    function getAbnormalReasons(row) {
+        const reasons = [];
+        if (row.tstat !== '0x0') reasons.push('TStat≠0x0');
+        if (row.cfreq < 2300) reasons.push('頻率<2300MHz');
+        if (row.tmargin < 0) reasons.push('TMargin<0');
+        if (row.dts === 0) reasons.push('DTS=0');
+        if (row.power < 200) reasons.push('功耗<200W');
+        return reasons;
+    }
+
+    // ---------- 產生 HTML 報告 (內嵌於頁面) ----------
+    function generateHtmlReport(data, filename) {
+        const cfreqs = data.map(d => d.cfreq);
+        const temps = data.map(d => d.temp);
+        const dtses = data.map(d => d.dts);
+        const powers = data.map(d => d.power);
+        const tmargins = data.map(d => d.tmargin);
+
+        const cfStat = computeStats(cfreqs);
+        const tempStat = computeStats(temps);
+        const dtsStat = computeStats(dtses);
+        const pwrStat = computeStats(powers);
+        const tmStat = computeStats(tmargins);
+
+        const totalPts = data.length;
+        const tstatNonzero = data.filter(d => d.tstat !== '0x0').length;
+        const tmarginNeg = data.filter(d => d.tmargin < 0).length;
+        const dtsZero = data.filter(d => d.dts === 0).length;
+        const freqLow = data.filter(d => d.cfreq < 2300).length;
+        const powerLow = data.filter(d => d.power < 200).length;
+
+        let conclusion, msg;
+        if (tstatNonzero > 0) {
+            conclusion = 'danger';
+            msg = '⚠️ 偵測到 TStat 非 0，表示系統曾觸發節流（Throttling），存在降速！';
+        } else if (freqLow > totalPts * 0.05) {
+            conclusion = 'danger';
+            msg = '⚠️ 有超過 5% 的時間頻率低於基頻 2300MHz，表示發生明顯降頻！';
+        } else if (tmarginNeg > totalPts * 0.1) {
+            conclusion = 'warning';
+            msg = '⚠️ 超過 10% 的時間 TMargin 為負，散熱餘量不足，但尚未觸發節流，需注意散熱改善。';
+        } else if (dtsZero > 0) {
+            conclusion = 'warning';
+            msg = '⚠️ 出現 DTS=0，表示溫度已達 Tprochot 上限，雖未降速但已無散熱餘量。';
+        } else {
+            conclusion = 'good';
+            msg = '✅ 測試期間全程穩定，功耗維持 215W 附近，頻率未低於基頻，無降速現象，Full TDP 測試通過！';
+        }
+
+        const now = new Date().toLocaleString('zh-TW', { hour12: false });
+
+        // 產生表格行
+        let rows = '';
+        for (let row of data) {
+            const reasons = getAbnormalReasons(row);
+            const abnormal = reasons.length > 0;
+            const rowClass = abnormal ? 'abnormal' : '';
+            const reasonText = reasons.join('；');
+            rows += `<tr class="${rowClass}">
+                <td>${row.index}</td>
+                <td>${row.timestamp}</td>
+                <td>${row.cfreqStr}</td>
+                <td>${row.tempStr}</td>
+                <td>${row.dtsStr}</td>
+                <td>${row.powerStr}</td>
+                <td>${row.tstat}</td>
+                <td>${row.tmarginStr}</td>
+                <td>${reasonText}</td>
+            </tr>`;
+        }
+
+        // 完整 HTML
+        return `<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>PTAT Full TDP 測試報告 (含完整數據)</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background: #f5f5f5; }
+.container { max-width: 1400px; margin: auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+h1, h2, h3 { color: #333; }
+.summary-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+.summary-table th, .summary-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+.summary-table th { background-color: #4CAF50; color: white; }
+.summary-table tr:nth-child(even) { background-color: #f9f9f9; }
+.detection { margin-top: 20px; }
+.detection-item { display: inline-block; margin: 5px 15px 5px 0; padding: 8px 15px; background: #eee; border-radius: 5px; }
+.good { background: #d4edda; border-left: 5px solid #28a745; padding: 10px; }
+.warning { background: #fff3cd; border-left: 5px solid #ffc107; padding: 10px; }
+.danger { background: #f8d7da; border-left: 5px solid #dc3545; padding: 10px; }
+.footer { margin-top: 30px; color: #777; font-size: 0.9em; }
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9em;
+    margin-top: 20px;
+}
+.data-table th, .data-table td {
+    border: 1px solid #ccc;
+    padding: 5px 8px;
+    text-align: center;
+}
+.data-table th {
+    background-color: #2c3e50;
+    color: white;
+    position: sticky;
+    top: 0;
+}
+.data-table tr.abnormal {
+    background-color: #f8d7da !important;
+    color: #721c24;
+}
+.data-table tr.abnormal td {
+    font-weight: bold;
+}
+.data-table tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+.data-table tr.abnormal:nth-child(even) {
+    background-color: #f5c6cb !important;
+}
+.scrollable {
+    max-height: 600px;
+    overflow-y: auto;
+}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>📊 TerraEdge Full TDP 測試報告 (含完整數據)</h1>
+<p><strong>測試日誌：</strong> ${filename}</p>
+<p><strong>正式測試資料筆數：</strong> ${totalPts} 筆 (已排除校準階段 Index 0)</p>
+<p><strong>分析時間：</strong> ${now}</p>
+
+<h2>📈 關鍵參數統計摘要</h2>
+<table class="summary-table">
+<thead><tr><th>參數</th><th>平均值</th><th>最大值</th><th>最小值</th><th>標準差</th></tr></thead>
+<tbody>
+<tr><td><strong>頻率 (MHz)</strong></td><td>${cfStat.avg.toFixed(1)}</td><td>${cfStat.max.toFixed(1)}</td><td>${cfStat.min.toFixed(1)}</td><td>${cfStat.std.toFixed(2)}</td></tr>
+<tr><td><strong>溫度 (°C)</strong></td><td>${tempStat.avg.toFixed(1)}</td><td>${tempStat.max.toFixed(1)}</td><td>${tempStat.min.toFixed(1)}</td><td>${tempStat.std.toFixed(2)}</td></tr>
+<tr><td><strong>DTS (°C)</strong></td><td>${dtsStat.avg.toFixed(1)}</td><td>${dtsStat.max.toFixed(1)}</td><td>${dtsStat.min.toFixed(1)}</td><td>${dtsStat.std.toFixed(2)}</td></tr>
+<tr><td><strong>功耗 (W)</strong></td><td>${pwrStat.avg.toFixed(1)}</td><td>${pwrStat.max.toFixed(1)}</td><td>${pwrStat.min.toFixed(1)}</td><td>${pwrStat.std.toFixed(2)}</td></tr>
+<tr><td><strong>TMargin (°C)</strong></td><td>${tmStat.avg.toFixed(1)}</td><td>${tmStat.max.toFixed(1)}</td><td>${tmStat.min.toFixed(1)}</td><td>${tmStat.std.toFixed(2)}</td></tr>
+</tbody>
+</table>
+
+<h2>🔍 異常偵測摘要</h2>
+<div class="detection">
+<div class="detection-item">📌 總採樣點數：${totalPts}</div>
+<div class="detection-item">⚠️ TStat≠0x0 次數：${tstatNonzero}</div>
+<div class="detection-item">❄️ TMargin<0 次數：${tmarginNeg}</div>
+<div class="detection-item">🔥 DTS=0 次數：${dtsZero}</div>
+<div class="detection-item">⬇️ 頻率<2300MHz 次數：${freqLow}</div>
+<div class="detection-item">⚡ 功耗<200W 次數：${powerLow}</div>
+</div>
+
+<h2>📋 結論</h2>
+<div class="${conclusion}"><strong>${msg}</strong></div>
+
+<h2>📄 完整數據表格 (紅字標示異常行，並註明原因)</h2>
+<p><em>異常條件：TStat≠0x0、頻率＜2300MHz、TMargin＜0、DTS=0、功耗＜200W，任一成立即標紅。</em></p>
+<div class="scrollable">
+<table class="data-table">
+<thead><tr><th>Index</th><th>時間戳</th><th>CFreq (MHz)</th><th>Temp (°C)</th><th>DTS (°C)</th><th>Power (W)</th><th>TStat</th><th>TMargin (°C)</th><th>異常原因</th></tr></thead>
+<tbody>
+${rows}
+</tbody>
+</table>
+</div>
+<div class="footer">報告產生時間：${now}</div>
+</div>
+</body>
+</html>`;
+    }
+
+    // ---------- 加入下載按鈕 ----------
+    function addDownloadButton(htmlContent, originalFilename) {
+        // 移除舊按鈕
+        const oldBtn = document.getElementById('downloadBtn');
+        if (oldBtn) oldBtn.remove();
+
+        const btn = document.createElement('button');
+        btn.id = 'downloadBtn';
+        btn.className = 'btn btn-download';
+        btn.textContent = '⬇️ 下載報告 (HTML)';
+        btn.style.marginTop = '20px';
+        btn.onclick = () => {
+            const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'report.html';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        };
+        reportContainer.appendChild(btn);
+    }
+
+})();
+</script>
+</body>
+</html>
