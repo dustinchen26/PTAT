@@ -74,7 +74,7 @@ body {
 <body>
 <div class="container">
     <h1>📊 PTAT Full TDP 報告產生器</h1>
-    <p>上傳 <strong>*_ptatmon.txt</strong> 日誌檔，包含 Index 0 全部顯示。</p>
+    <p>上傳 <strong>*_ptatmon.txt</strong> 日誌檔（支援含時間戳與不含時間戳兩種格式），包含 Index 0 全部顯示。</p>
 
     <div class="upload-area" id="uploadArea">
         <p>📁 點擊選擇檔案 或 拖曳檔案至此</p>
@@ -150,33 +150,52 @@ body {
         errorDiv.style.display = 'block';
     }
 
-    // ---------- 核心解析函數 (已移除跳過 Index 0 的邏輯) ----------
+    // ---------- 核心解析函數 (支援兩種格式) ----------
     function parsePtamonFile(text) {
         const lines = text.split(/\r?\n/);
         const data = [];
         let start = false;
+        let hasTimestamp = false; // true: 有 "Timestamp" 標題列
+
         for (let line of lines) {
+            // 跳過空行
+            if (!line.trim()) continue;
+
+            // 尋找標題列
             if (!start && line.includes('Index')) {
                 start = true;
+                // 判斷是否包含 Timestamp
+                if (line.includes('Timestamp')) {
+                    hasTimestamp = true;
+                } else {
+                    hasTimestamp = false;
+                }
                 continue;
             }
-            if (!start || !line.trim()) continue;
+
+            // 標題後才是數據
+            if (!start) continue;
 
             const parts = line.trim().split(/\s+/);
-            if (parts.length < 29) continue;
-            if (parts[3] !== 'CPU0') continue;
+            // 最少要有足夠的欄位 (無 timestamp 至少 27 個，有 timestamp 至少 29 個)
+            const minLen = hasTimestamp ? 29 : 27;
+            if (parts.length < minLen) continue;
 
-            const index = parseInt(parts[2], 10);
+            // 根據有無 timestamp 決定偏移量 offset
+            const offset = hasTimestamp ? 2 : 0; // 有 timestamp 時 Index 在 parts[2]，否則在 parts[0]
+
+            // 取出 Index (必須為數字)
+            const indexStr = parts[offset];
+            const index = parseInt(indexStr, 10);
             if (isNaN(index)) continue;
-            // ⚠️ 已移除跳過 Index 0 的判斷，全部顯示
 
-            const timestamp = parts[0] + ' ' + parts[1];
-            const cfreqStr = parts[6];
-            const tempStr = parts[19];
-            const dtsStr = parts[20];
-            const powerStr = parts[21];
-            const tstatStr = parts[24];
-            const tmarginStr = parts[27];
+            // 取出各欄位 (使用通用偏移)
+            const cfreqStr = parts[4 + offset];
+            const tempStr = parts[17 + offset];
+            const dtsStr = parts[18 + offset];
+            const powerStr = parts[19 + offset];
+            const tstatStr = parts[22 + offset];
+            const tmarginStr = parts[25 + offset];
 
             const cfreq = parseFloat(cfreqStr);
             const temp = parseFloat(tempStr);
@@ -184,6 +203,12 @@ body {
             const power = parseFloat(powerStr);
             const tmargin = parseFloat(tmarginStr);
             if (isNaN(cfreq) || isNaN(temp) || isNaN(dts) || isNaN(power) || isNaN(tmargin)) continue;
+
+            // 時間戳：有 timestamp 時組合前兩欄，否則設為空
+            let timestamp = '';
+            if (hasTimestamp) {
+                timestamp = parts[0] + ' ' + parts[1];
+            }
 
             data.push({
                 index: index,
@@ -201,6 +226,7 @@ body {
                 tmarginStr: tmarginStr
             });
         }
+
         if (data.length === 0) throw new Error('未找到任何有效數據，請確認檔案格式正確。');
         return data;
     }
@@ -275,9 +301,11 @@ body {
             const abnormal = reasons.length > 0;
             const rowClass = abnormal ? 'abnormal' : '';
             const reasonText = reasons.join('；');
+            // 時間戳若無則顯示 "-"
+            const displayTimestamp = row.timestamp || '-';
             rows += `<tr class="${rowClass}">
                 <td>${row.index}</td>
-                <td>${row.timestamp}</td>
+                <td>${displayTimestamp}</td>
                 <td>${row.cfreqStr}</td>
                 <td>${row.tempStr}</td>
                 <td>${row.dtsStr}</td>
