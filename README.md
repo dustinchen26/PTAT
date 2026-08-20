@@ -2,7 +2,31 @@
 
 https://dustinchen26.github.io/PTAT
 
-這是一個純前端網頁工具，讓您只需上傳 `*_ptatmon.txt` 日誌檔，即可立即產生完整的 PTAT Full TDP 測試報告，並可直接下載為獨立的 HTML 檔案。
+上傳 `*_ptatmon.txt` 日誌檔，即可產生 PTAT Full TDP 測試報告，並可直接下載為獨立的 HTML 檔案。
+
+## How to use
+```
+1.在server下指令
+sudo ./ptat -ct 1 -t 10 -log -logdir . -i 1000000
+
+2.會產生類似底下開頭檔案
+20260820_023615_ptatmsg.txt
+
+3.上傳這個20260820_023615_ptatmsg.txt，會解析表格內容
+ Index Device Cor Thr CFreq      UFreq[CMPT:IO]  PState   Util  IPC     C0     C1     C6    PC2    PC6 MC Ch Sl  Temp DTS  Power  Volt      UVolt[CMPT:IO] TStat TLog #TL TMargin MCPMargin 
+     0   CPU0   -   -   873           2300:2300      16   0.53 0.72   1.35   1.38  97.27   0.00   0.00  -  -  -    65  41  52.70 0.611         0.815:0.856   0x0  0x0   0  34.164    34.156 
+     0   MEM0   -   -     -                   -      -    -      -      -      -      -      -  -  -  -    32   - 235.80     -                   -     -  0x0   -       -         - 
+     1   CPU0   -   -  2441           2300:2300       0  91.83 5.43  96.08   0.01   3.91   0.00   0.00  -  -  -    73  33 123.23 0.708         0.813:0.853   0x0  0x0   0  24.312    24.344 
+     1   MEM0   -   -     -                   -      -    -      -      -      -      -      -  -  -  -    32   - 233.92     -                   -     -  0x0   -       -         - 
+
+4.輸出完美報告 
+📄 完整數據表格 (紅字標示異常行，並註明原因)
+異常條件：TStat≠0x0、頻率＜2300MHz、TMargin＜0、DTS=0、功耗＜200W，任一成立即標紅。
+
+Index	時間戳	CFreq (MHz)	Temp (°C)	DTS (°C)	Power (W)	TStat	TMargin (°C)	異常原因
+0	-	873	65	41	52.70	0x0	34.164	頻率<2300MHz；功耗<200W
+1	-	2441	73	33	123.23	0x0	24.312	功耗<200W	
+```
 
 ---
 
